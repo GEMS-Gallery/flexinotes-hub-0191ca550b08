@@ -1,0 +1,22 @@
+type Tab = 
+ record {
+   content: opt text;
+   id: nat;
+   title: text;
+ };
+type Result_1 = 
+ variant {
+   err: text;
+   ok: nat;
+ };
+type Result = 
+ variant {
+   err: text;
+   ok;
+ };
+service : {
+  createTab: (text, opt text) -> (Result_1);
+  deleteTab: (nat) -> (Result);
+  getTabs: () -> (vec Tab) query;
+  updateTab: (nat, text, opt text) -> (Result);
+}

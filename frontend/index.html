@@ -144,10 +144,36 @@
         .note .ql-container {
             border: none;
         }
+        #login-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #login-button {
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
     </style>
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@dfinity/agent/lib/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@dfinity/auth-client/lib/index.js"></script>
 </head>
 <body>
+    <div id="login-container">
+        <button id="login-button">Login with Internet Identity</button>
+    </div>
     <div id="tab-container">
         <div class="tab active" onclick="switchWorkspace(0)">Workspace 1</div>
         <div class="tab" onclick="switchWorkspace(1)">Workspace 2</div>
@@ -166,10 +192,86 @@
         let offset = { x: 0, y: 0 };
         let zIndex = 1;
         let currentWorkspace = 0;
+        let authClient;
+        let actor;
 
         const workspaces = document.querySelectorAll('.workspace');
         const dropZone = document.getElementById('drop-zone');
         const workspaceContainer = document.getElementById('workspace-container');
+        const loginContainer = document.getElementById('login-container');
+        const loginButton = document.getElementById('login-button');
+
+        async function initAuth() {
+            authClient = await AuthClient.create();
+            if (await authClient.isAuthenticated()) {
+                handleAuthenticated();
+            }
+        }
+
+        loginButton.onclick = async () => {
+            await authClient.login({
+                identityProvider: "https://identity.ic0.app/#authorize",
+                onSuccess: handleAuthenticated,
+            });
+        };
+
+        async function handleAuthenticated() {
+            loginContainer.style.display = 'none';
+            const identity = await authClient.getIdentity();
+            actor = createActor(identity);
+            await loadUserData();
+        }
+
+        function createActor(identity) {
+            const agent = new HttpAgent({ identity });
+            return Actor.createActor(idlFactory, {
+                agent,
+                canisterId: '<YOUR_BACKEND_CANISTER_ID>',
+            });
+        }
+
+        async function loadUserData() {
+            try {
+                const result = await actor.getUserData();
+                if ('ok' in result) {
+                    const userData = result.ok;
+                    userData.documents.forEach(createDocumentElement);
+                    userData.notes.forEach(createNoteElement);
+                } else {
+                    console.error('Error loading user data:', result.err);
+                }
+            } catch (error) {
+                console.error('Error loading user data:', error);
+            }
+        }
+
+        async function saveUserData() {
+            const documents = Array.from(workspaceContainer.querySelectorAll('.document')).map(doc => ({
+                id: doc.id,
+                title: doc.querySelector('.header span').textContent,
+                content: doc.querySelector('.content').innerHTML,
+                position: {
+                    x: parseInt(doc.style.left),
+                    y: parseInt(doc.style.top)
+                }
+            }));
+
+            const notes = Array.from(workspaceContainer.querySelectorAll('.note')).map(note => ({
+                id: note.id,
+                content: note.quillEditor.root.innerHTML,
+                position: {
+                    x: parseInt(note.style.left),
+                    y: parseInt(note.style.top)
+                },
+                documentId: note.docElement.id
+            }));
+
+            try {
+                await actor.saveUserData(documents, notes);
+            } catch (error) {
+                console.error('Error saving user data:', error);
+            }
+        }
 
         workspaceContainer.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -197,16 +299,26 @@
             dropZone.classList.remove('drag-over');
             const files = e.dataTransfer.files;
             for (let file of files) {
-                createDocumentElement(file);
+                createDocumentElement({
+                    id: 'doc_' + Date.now(),
+                    title: file.name,
+                    content: '',
+                    position: {
+                        x: e.clientX - workspaceContainer.offsetLeft,
+                        y: e.clientY - workspaceContainer.offsetTop
+                    }
+                }, file);
             }
+            saveUserData();
         }
 
-        function createDocumentElement(file) {
+        function createDocumentElement(docData, file = null) {
             const doc = document.createElement('div');
             doc.className = 'document';
+            doc.id = docData.id;
             doc.innerHTML = `
                 <div class="header">
-                    <span>${file.name}</span>
+                    <span>${docData.title}</span>
                     <div class="controls">
                         <span class="control add-note" onclick="addNoteToDocument(this)">+Note</span>
                         <span class="control close" onclick="removeDocument(this)">×</span>
@@ -217,25 +329,31 @@
             `;
 
             const content = doc.querySelector('.content');
-            if (file.type.startsWith('image/')) {
-                const img = document.createElement('img');
-                img.src = URL.createObjectURL(file);
-                img.style.maxWidth = '100%';
-                content.appendChild(img);
-            } else if (file.type === 'application/pdf') {
-                const obj = document.createElement('object');
-                obj.data = URL.createObjectURL(file);
-                obj.type = 'application/pdf';
-                obj.width = '100%';
-                obj.height = '100%';
-                content.appendChild(obj);
+            if (file) {
+                if (file.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(file);
+                    img.style.maxWidth = '100%';
+                    content.appendChild(img);
+                } else if (file.type === 'application/pdf') {
+                    const obj = document.createElement('object');
+                    obj.data = URL.createObjectURL(file);
+                    obj.type = 'application/pdf';
+                    obj.width = '100%';
+                    obj.height = '100%';
+                    content.appendChild(obj);
+                } else {
+                    content.textContent = `File type not supported: ${file.type}`;
+                }
             } else {
-                content.textContent = `File type not supported: ${file.type}`;
+                content.innerHTML = docData.content;
             }
 
             doc.style.width = '300px';
             doc.style.height = '300px';
-            placeElement(doc);
+            doc.style.left = docData.position.x + 'px';
+            doc.style.top = docData.position.y + 'px';
+            workspaces[currentWorkspace].appendChild(doc);
 
             const header = doc.querySelector('.header');
             header.addEventListener('mousedown', startDragging);
@@ -244,11 +362,13 @@
             resizeHandle.addEventListener('mousedown', startResizing);
 
             doc.addEventListener('mousedown', () => bringToFront(doc));
+            return doc;
         }
 
-        function createNoteElement(docElement) {
+        function createNoteElement(noteData) {
             const note = document.createElement('div');
             note.className = 'note';
+            note.id = noteData.id;
             note.innerHTML = `
                 <div class="header">
                     <span>Note</span>
@@ -268,7 +388,7 @@
 
             note.addEventListener('mousedown', () => bringToFront(note));
 
-            note.docElement = docElement;
+            note.docElement = document.getElementById(noteData.documentId);
 
             const quillEditor = new Quill(note.querySelector('.content'), {
                 theme: 'snow',
@@ -281,19 +401,31 @@
                 }
             });
 
+            quillEditor.root.innerHTML = noteData.content;
             note.quillEditor = quillEditor;
 
+            note.style.left = noteData.position.x + 'px';
+            note.style.top = noteData.position.y + 'px';
+            workspaces[currentWorkspace].appendChild(note);
+
+            createConnection(note.docElement, note);
             return note;
         }
 
         function addNoteToDocument(button) {
             const doc = button.closest('.document');
-            const note = createNoteElement(doc);
-            note.style.left = (parseInt(doc.style.left) + 20) + 'px';
-            note.style.top = (parseInt(doc.style.top) + 20) + 'px';
-            workspaces[currentWorkspace].appendChild(note);
+            const noteData = {
+                id: 'note_' + Date.now(),
+                content: '',
+                position: {
+                    x: parseInt(doc.style.left) + 20,
+                    y: parseInt(doc.style.top) + 20
+                },
+                documentId: doc.id
+            };
+            const note = createNoteElement(noteData);
             bringToFront(note);
-            createConnection(doc, note);
+            saveUserData();
         }
 
         function createConnection(doc, note) {
@@ -360,13 +492,6 @@
             endDot.style.top = `${noteY - 3}px`;
         }
 
-        function placeElement(element) {
-            element.style.left = Math.random() * (workspaces[currentWorkspace].clientWidth - 300) + 'px';
-            element.style.top = Math.random() * (workspaces[currentWorkspace].clientHeight - 300) + 'px';
-            workspaces[currentWorkspace].appendChild(element);
-            bringToFront(element);
-        }
-
         function startDragging(e) {
             if (e.target.classList.contains('control')) return;
             draggedElement = this.closest('.document') || this.closest('.note');
@@ -396,6 +521,7 @@
             draggedElement = null;
             document.removeEventListener('mousemove', drag);
             document.removeEventListener('mouseup', stopDragging);
+            saveUserData();
         }
 
         function startResizing(e) {
@@ -425,6 +551,7 @@
             resizedElement = null;
             document.removeEventListener('mousemove', resize);
             document.removeEventListener('mouseup', stopResizing);
+            saveUserData();
         }
 
         function bringToFront(element) {
@@ -436,6 +563,7 @@
             const notes = Array.from(workspaces[currentWorkspace].querySelectorAll('.note')).filter(note => note.docElement === doc);
             notes.forEach(removeNote);
             doc.remove();
+            saveUserData();
         }
 
         function removeNote(closeButton) {
@@ -446,7 +574,10 @@
                 note.connection.endDot.remove();
             }
             note.remove();
+            saveUserData();
         }
+
+        initAuth();
     </script>
 </body>
 </html>

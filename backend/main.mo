@@ -7,55 +7,60 @@ import Result "mo:base/Result";
 import Nat "mo:base/Nat";
 import Option "mo:base/Option";
 import Iter "mo:base/Iter";
+import Principal "mo:base/Principal";
 
 actor {
-  type Tab = {
-    id: Nat;
+  type UserData = {
+    documents: [Document];
+    notes: [Note];
+  };
+
+  type Document = {
+    id: Text;
     title: Text;
-    content: ?Text;
+    content: Text;
+    position: Position;
   };
 
-  stable var nextId: Nat = 0;
-  stable var tabsEntries: [(Nat, Tab)] = [];
-
-  var tabs = HashMap.HashMap<Nat, Tab>(10, Nat.equal, Nat.hash);
-
-  public func createTab(title: Text, content: ?Text) : async Result.Result<Nat, Text> {
-    let id = nextId;
-    nextId += 1;
-    let newTab: Tab = { id; title; content };
-    tabs.put(id, newTab);
-    #ok(id)
+  type Note = {
+    id: Text;
+    content: Text;
+    position: Position;
+    documentId: Text;
   };
 
-  public query func getTabs() : async [Tab] {
-    Array.map<(Nat, Tab), Tab>(Iter.toArray(tabs.entries()), func (entry) { entry.1 })
+  type Position = {
+    x: Nat;
+    y: Nat;
   };
 
-  public func updateTab(id: Nat, title: Text, content: ?Text) : async Result.Result<(), Text> {
-    switch (tabs.get(id)) {
-      case (null) { #err("Tab not found") };
-      case (?tab) {
-        let updatedTab: Tab = { id; title; content };
-        tabs.put(id, updatedTab);
-        #ok()
-      };
-    }
+  stable var userDataEntries: [(Principal, UserData)] = [];
+  var userData = HashMap.HashMap<Principal, UserData>(10, Principal.equal, Principal.hash);
+
+  public shared(msg) func saveUserData(documents: [Document], notes: [Note]) : async Result.Result<(), Text> {
+    let caller = msg.caller;
+    let data: UserData = {
+      documents = documents;
+      notes = notes;
+    };
+    userData.put(caller, data);
+    #ok()
   };
 
-  public func deleteTab(id: Nat) : async Result.Result<(), Text> {
-    switch (tabs.remove(id)) {
-      case (null) { #err("Tab not found") };
-      case (?_) { #ok() };
+  public shared(msg) func getUserData() : async Result.Result<UserData, Text> {
+    let caller = msg.caller;
+    switch (userData.get(caller)) {
+      case (null) { #err("No data found for user") };
+      case (?data) { #ok(data) };
     }
   };
 
   system func preupgrade() {
-    tabsEntries := Iter.toArray(tabs.entries());
+    userDataEntries := Iter.toArray(userData.entries());
   };
 
   system func postupgrade() {
-    tabs := HashMap.fromIter<Nat, Tab>(tabsEntries.vals(), 10, Nat.equal, Nat.hash);
-    tabsEntries := [];
+    userData := HashMap.fromIter<Principal, UserData>(userDataEntries.vals(), 10, Principal.equal, Principal.hash);
+    userDataEntries := [];
   };
 }

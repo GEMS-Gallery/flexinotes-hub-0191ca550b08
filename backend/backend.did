@@ -1,22 +1,38 @@
-type Tab = 
+type UserData = 
  record {
-   content: opt text;
-   id: nat;
-   title: text;
+   documents: vec Document;
+   notes: vec Note;
  };
 type Result_1 = 
  variant {
    err: text;
-   ok: nat;
+   ok: UserData;
  };
 type Result = 
  variant {
    err: text;
    ok;
  };
+type Position = 
+ record {
+   x: nat;
+   y: nat;
+ };
+type Note = 
+ record {
+   content: text;
+   documentId: text;
+   id: text;
+   position: Position;
+ };
+type Document = 
+ record {
+   content: text;
+   id: text;
+   position: Position;
+   title: text;
+ };
 service : {
-  createTab: (text, opt text) -> (Result_1);
-  deleteTab: (nat) -> (Result);
-  getTabs: () -> (vec Tab) query;
-  updateTab: (nat, text, opt text) -> (Result);
+  getUserData: () -> (Result_1);
+  saveUserData: (vec Document, vec Note) -> (Result);
 }

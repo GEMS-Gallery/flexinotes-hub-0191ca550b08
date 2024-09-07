@@ -121,7 +121,6 @@
             position: absolute;
             pointer-events: none;
             z-index: 0;
-            border-top: 2px solid #a0a0a0;
         }
         .connection-dot {
             position: absolute;
@@ -266,21 +265,30 @@
         }
 
         function createConnection(doc, note) {
-            const connection = document.createElement('div');
-            connection.className = 'connection-line';
+            const connection = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            connection.setAttribute('class', 'connection-line');
+            connection.style.overflow = 'visible';
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', '#a0a0a0');
+            path.setAttribute('stroke-width', '2');
+            connection.appendChild(path);
+
             const startDot = document.createElement('div');
             startDot.className = 'connection-dot';
             const endDot = document.createElement('div');
             endDot.className = 'connection-dot';
+
             workspaces[currentWorkspace].appendChild(connection);
             workspaces[currentWorkspace].appendChild(startDot);
             workspaces[currentWorkspace].appendChild(endDot);
-            note.connection = { line: connection, startDot: startDot, endDot: endDot };
+
+            note.connection = { svg: connection, path: path, startDot: startDot, endDot: endDot };
             updateConnection(doc, note);
         }
 
         function updateConnection(doc, note) {
-            const { line, startDot, endDot } = note.connection;
+            const { svg, path, startDot, endDot } = note.connection;
             const docRect = doc.getBoundingClientRect();
             const noteRect = note.getBoundingClientRect();
 
@@ -294,31 +302,24 @@
                 y: noteRect.top + noteRect.height / 2
             };
 
-            const angleRad = Math.atan2(noteCenter.y - docCenter.y, noteCenter.x - docCenter.x);
+            const angle = Math.atan2(noteCenter.y - docCenter.y, noteCenter.x - docCenter.x);
+            const docX = docCenter.x + Math.cos(angle) * (docRect.width / 2);
+            const docY = docCenter.y + Math.sin(angle) * (docRect.height / 2);
+            const noteX = noteCenter.x - Math.cos(angle) * (noteRect.width / 2);
+            const noteY = noteCenter.y - Math.sin(angle) * (noteRect.height / 2);
 
-            let docX, docY, noteX, noteY;
+            const midX = (docX + noteX) / 2;
+            const midY = (docY + noteY) / 2;
+            const controlX = midX + (noteY - docY) * 0.25;
+            const controlY = midY - (noteX - docX) * 0.25;
 
-            // Determine connection points
-            if (Math.abs(Math.cos(angleRad)) > Math.abs(Math.sin(angleRad))) {
-                // Horizontal connection
-                docX = (Math.cos(angleRad) > 0) ? docRect.right : docRect.left;
-                docY = docCenter.y;
-                noteX = (Math.cos(angleRad) > 0) ? noteRect.left : noteRect.right;
-                noteY = noteCenter.y;
-            } else {
-                // Vertical connection
-                docX = docCenter.x;
-                docY = (Math.sin(angleRad) > 0) ? docRect.bottom : docRect.top;
-                noteX = noteCenter.x;
-                noteY = (Math.sin(angleRad) > 0) ? noteRect.top : noteRect.bottom;
-            }
+            const pathD = `M${docX},${docY} Q${controlX},${controlY} ${noteX},${noteY}`;
+            path.setAttribute('d', pathD);
 
-            const distance = Math.hypot(noteX - docX, noteY - docY);
-
-            line.style.width = `${distance}px`;
-            line.style.left = `${docX}px`;
-            line.style.top = `${docY}px`;
-            line.style.transform = `rotate(${angleRad}rad)`;
+            svg.style.left = '0';
+            svg.style.top = '0';
+            svg.style.width = '100%';
+            svg.style.height = '100%';
 
             startDot.style.left = `${docX - 3}px`;
             startDot.style.top = `${docY - 3}px`;
@@ -408,7 +409,7 @@
         function removeNote(closeButton) {
             const note = closeButton.closest ? closeButton.closest('.note') : closeButton;
             if (note.connection) {
-                note.connection.line.remove();
+                note.connection.svg.remove();
                 note.connection.startDot.remove();
                 note.connection.endDot.remove();
             }

@@ -159,8 +159,6 @@
         }
     </style>
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@dfinity/agent/lib/index.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@dfinity/auth-client/lib/index.js"></script>
 </head>
 <body>
     <button id="auth-button">Login with Internet Identity</button>
@@ -176,7 +174,10 @@
         <div id="drop-zone">Drag & Drop Files Here</div>
     </div>
 
-    <script>
+    <script type="module">
+        import { AuthClient } from "https://cdn.jsdelivr.net/npm/@dfinity/auth-client/lib/esm/index.js";
+        import { HttpAgent, Actor } from "https://cdn.jsdelivr.net/npm/@dfinity/agent/lib/esm/index.js";
+
         let draggedElement = null;
         let resizedElement = null;
         let offset = { x: 0, y: 0 };
@@ -191,44 +192,54 @@
         const authButton = document.getElementById('auth-button');
 
         async function initAuth() {
-            authClient = await AuthClient.create();
-            if (await authClient.isAuthenticated()) {
-                authButton.textContent = 'Logout';
-                handleAuthenticated();
-            } else {
-                authButton.textContent = 'Login with Internet Identity';
+            try {
+                authClient = await AuthClient.create();
+                if (await authClient.isAuthenticated()) {
+                    authButton.textContent = 'Logout';
+                    await handleAuthenticated();
+                } else {
+                    authButton.textContent = 'Login with Internet Identity';
+                }
+            } catch (error) {
+                console.error('Error initializing authentication:', error);
             }
         }
 
         authButton.onclick = async () => {
-            if (await authClient.isAuthenticated()) {
-                await authClient.logout();
-                authButton.textContent = 'Login with Internet Identity';
-                location.reload();
-            } else {
-                try {
+            try {
+                if (authClient && await authClient.isAuthenticated()) {
+                    await authClient.logout();
+                    authButton.textContent = 'Login with Internet Identity';
+                    location.reload();
+                } else if (authClient) {
                     await authClient.login({
                         identityProvider: "https://identity.ic0.app/#authorize",
                         onSuccess: handleAuthenticated,
                     });
-                } catch (error) {
-                    console.error('Authentication error:', error);
+                } else {
+                    console.error('AuthClient not initialized');
                 }
+            } catch (error) {
+                console.error('Authentication error:', error);
             }
         };
 
         async function handleAuthenticated() {
-            authButton.textContent = 'Logout';
-            const identity = await authClient.getIdentity();
-            actor = createActor(identity);
-            await loadUserData();
+            try {
+                authButton.textContent = 'Logout';
+                const identity = await authClient.getIdentity();
+                actor = createActor(identity);
+                await loadUserData();
+            } catch (error) {
+                console.error('Error handling authentication:', error);
+            }
         }
 
         function createActor(identity) {
             const agent = new HttpAgent({ identity });
-            return Actor.createActor(idlFactory, {
+            return Actor.createActor({
                 agent,
-                canisterId: '<YOUR_BACKEND_CANISTER_ID>',
+                canisterId: 'CANISTER_ID_PLACEHOLDER',
             });
         }
 

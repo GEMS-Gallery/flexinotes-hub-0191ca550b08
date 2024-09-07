@@ -144,26 +144,18 @@
         .note .ql-container {
             border: none;
         }
-        #login-container {
+        #auth-button {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        #login-button {
+            top: 10px;
+            right: 10px;
             padding: 10px 20px;
-            font-size: 18px;
+            font-size: 16px;
             background-color: #4CAF50;
             color: white;
             border: none;
             border-radius: 5px;
             cursor: pointer;
+            z-index: 1000;
         }
     </style>
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
@@ -171,9 +163,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@dfinity/auth-client/lib/index.js"></script>
 </head>
 <body>
-    <div id="login-container">
-        <button id="login-button">Login with Internet Identity</button>
-    </div>
+    <button id="auth-button">Login with Internet Identity</button>
     <div id="tab-container">
         <div class="tab active" onclick="switchWorkspace(0)">Workspace 1</div>
         <div class="tab" onclick="switchWorkspace(1)">Workspace 2</div>
@@ -198,25 +188,37 @@
         const workspaces = document.querySelectorAll('.workspace');
         const dropZone = document.getElementById('drop-zone');
         const workspaceContainer = document.getElementById('workspace-container');
-        const loginContainer = document.getElementById('login-container');
-        const loginButton = document.getElementById('login-button');
+        const authButton = document.getElementById('auth-button');
 
         async function initAuth() {
             authClient = await AuthClient.create();
             if (await authClient.isAuthenticated()) {
+                authButton.textContent = 'Logout';
                 handleAuthenticated();
+            } else {
+                authButton.textContent = 'Login with Internet Identity';
             }
         }
 
-        loginButton.onclick = async () => {
-            await authClient.login({
-                identityProvider: "https://identity.ic0.app/#authorize",
-                onSuccess: handleAuthenticated,
-            });
+        authButton.onclick = async () => {
+            if (await authClient.isAuthenticated()) {
+                await authClient.logout();
+                authButton.textContent = 'Login with Internet Identity';
+                location.reload();
+            } else {
+                try {
+                    await authClient.login({
+                        identityProvider: "https://identity.ic0.app/#authorize",
+                        onSuccess: handleAuthenticated,
+                    });
+                } catch (error) {
+                    console.error('Authentication error:', error);
+                }
+            }
         };
 
         async function handleAuthenticated() {
-            loginContainer.style.display = 'none';
+            authButton.textContent = 'Logout';
             const identity = await authClient.getIdentity();
             actor = createActor(identity);
             await loadUserData();
@@ -246,6 +248,11 @@
         }
 
         async function saveUserData() {
+            if (!actor) {
+                console.error('User not authenticated');
+                return;
+            }
+
             const documents = Array.from(workspaceContainer.querySelectorAll('.document')).map(doc => ({
                 id: doc.id,
                 title: doc.querySelector('.header span').textContent,
